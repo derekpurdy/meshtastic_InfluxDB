@@ -48,7 +48,7 @@ client = InfluxDBClient(INFLUXDB_HOST, INFLUXDB_PORT, INFLUXDB_USER,INFLUXDB_PAS
 data = []
 
 
-cmd = ['meshtastic', '--host', MESH_NODE_HOST, '--info'] #local server command to execute to get the node information
+cmd = ['./python/bin/meshtastic', '--host', MESH_NODE_HOST, '--info'] #local server command to execute to get the node information
 RESULT = subprocess.run(cmd, stdout=subprocess.PIPE)
 
 RESULT = str(RESULT.stdout)
