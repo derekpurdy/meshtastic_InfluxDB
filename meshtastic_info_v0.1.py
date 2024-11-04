@@ -1,115 +1,86 @@
-'''
- *  Meshtastic Node Information upload to InfluxDB v0.1
- *
- * MIT License
- *
- * Copyright (c) 2024 Dmitri Prigojev
- *
- * Permission is hereby granted, free of charge, to any person
- * obtaining a copy of this software and associated documentation
- * files (the "Software"), to deal in the Software without
- * restriction, including without limitation the rights to use,
- * copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following
- * conditions:
- * 
- * The above copyright notice and this permission notice shall be
- * included in all copies or substantial portions of the Software.
- * 
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
- * OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
- * HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
- * WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
- * OTHER DEALINGS IN THE SOFTWARE.
- */
-'''
-
 import json
 import os
 import subprocess
 import time
 from influxdb import InfluxDBClient
 
-
-INFLUXDB_HOST = os.environ['INFLUXDB_HOST'] #ip or hostname
-INFLUXDB_PORT = os.environ['INFLUXDB_PORT']
-INFLUXDB_USER = os.environ['INFLUXDB_USER']
-INFLUXDB_PASSWORD = os.environ['INFLUXDB_PASSWORD']
-INFLUXDB_DB = os.environ['INFLUXDB_DB'] # databases name
-MESH_NODE_HOST = os.environ['MESH_NODE_HOST']
-TIME_OFFSET = os.environ['TIME_OFFSET'] # in seconds, upload only nodes heard in the last X seconds
+# Environment variables
+INFLUXDB_HOST = os.getenv('INFLUXDB_HOST')
+INFLUXDB_PORT = int(os.getenv('INFLUXDB_PORT', 8086))
+INFLUXDB_USER = os.getenv('INFLUXDB_USER')
+INFLUXDB_PASSWORD = os.getenv('INFLUXDB_PASSWORD')
+INFLUXDB_DB = os.getenv('INFLUXDB_DB')
+MESH_NODE_HOST = os.getenv('MESH_NODE_HOST')
+TIME_OFFSET = int(os.getenv('TIME_OFFSET', 60))  # in seconds
 
 cur_time = time.time()
-client = InfluxDBClient(INFLUXDB_HOST, INFLUXDB_PORT, INFLUXDB_USER,INFLUXDB_PASSWORD, INFLUXDB_DB) #InfluxDB client connection details
-data = []
 
-
-cmd = ['./python/bin/meshtastic', '--host', MESH_NODE_HOST, '--info'] #local server command to execute to get the node information
-RESULT = subprocess.run(cmd, stdout=subprocess.PIPE)
-
-RESULT = str(RESULT.stdout)
-
-### Clean up the results
-start_pos = RESULT.find('Nodes in mesh: ') + len('Nodes in mesh: ')
-end_pos = RESULT.find('Preferences:')
-
-### Get only the piece of data with node information
-json_chunk = RESULT[start_pos:end_pos]
-
-### Clean up the JSON before parsing
-json_chunk_fixed = json_chunk.replace("\\r","")
-json_chunk_fixed = json_chunk_fixed.replace("\\n","")
-
+# Initialize InfluxDB client
 try:
-    parsed_json = json.loads(json_chunk_fixed) # Parse JSON
-except JSONDecodeError:
-    print("Can't parse JSON, no data or bad data received from the local node. Check the node")
+    client = InfluxDBClient(
+        host=INFLUXDB_HOST, port=INFLUXDB_PORT,
+        username=INFLUXDB_USER, password=INFLUXDB_PASSWORD,
+        database=INFLUXDB_DB
+    )
+except Exception as e:
+    print(f"Failed to connect to InfluxDB: {e}")
+    exit(1)
+
+# Command to fetch node information
+cmd = ['./python/bin/meshtastic', '--host', MESH_NODE_HOST, '--info']
+try:
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, check=True)
+    result_text = result.stdout.decode('utf-8')
+except subprocess.CalledProcessError as e:
+    print(f"Command execution failed: {e}")
+    exit(1)
+
+# Extract JSON chunk from the command output
+start_pos = result_text.find('Nodes in mesh: ') + len('Nodes in mesh: ')
+end_pos = result_text.find('Preferences:')
+json_chunk = result_text[start_pos:end_pos].replace("\\r", "").replace("\\n", "")
+
+# Parse JSON
+try:
+    parsed_json = json.loads(json_chunk)
+except json.JSONDecodeError:
+    print("Error parsing JSON data.")
+    exit(1)
 
 print("Appending Nodes for DB upload:")
+data = []
 
-### Iterate through JSON to get node details
-### InfluxDB doesn't handle nulls well, need to check each key to see if it exists and only then append to the string
+# Process each node and prepare data for InfluxDB
 for key, value in parsed_json.items():
-    shortName = str(value["user"].get("shortName",""))
-    snr = str(value.get("snr",""))
-    lastHeard = value.get("lastHeard",0)
-    deviceMetrics = str(value.get("deviceMetrics",""))
-    if deviceMetrics!="": ### See if deviceMetrics is available for the node
-        batteryLevel = str(value["deviceMetrics"].get("batteryLevel",""))
-        voltage = str(value["deviceMetrics"].get("voltage",""))
-        channelUtilization = str(value["deviceMetrics"].get("channelUtilization",""))
-        airUtilTx = str(value["deviceMetrics"].get("airUtilTx",""))
-        uptime = str(value["deviceMetrics"].get("uptimeSeconds",""))
+    lastHeard = value.get("lastHeard", 0)
 
-    #test_heard = cur_time-lastHeard ### For debug
-    #print("Test Node: "+shortName+" lastHeard "+str(test_heard)+"sec ago") ### For debug
+    # Skip nodes that haven't been heard from recently
+    if lastHeard <= cur_time - TIME_OFFSET:
+        continue
 
-    if lastHeard > cur_time-TIME_OFFSET: ### Check if the node is fresh
+    # Prepare InfluxDB line protocol data
+    fields = {
+        "batteryLevel": value.get("deviceMetrics", {}).get("batteryLevel"),
+        "voltage": value.get("deviceMetrics", {}).get("voltage"),
+        "channelUtilization": value.get("deviceMetrics", {}).get("channelUtilization"),
+        "airUtilTx": value.get("deviceMetrics", {}).get("airUtilTx"),
+        "uptime": value.get("deviceMetrics", {}).get("uptimeSeconds"),
+        "snr": value.get("snr")
+    }
+    fields = {k: v for k, v in fields.items() if v is not None}  # Remove None values
 
-        #print(shortName+" Node made it past If") ### For debug
-        append_string = "nodeinfo,"+"shortName="+shortName+" " ### Using 'nodeinfo' as the measurement name
-        if batteryLevel!="":
-            append_string=append_string+"batteryLevel="+batteryLevel
-        if voltage!="":
-            append_string=append_string+",voltage="+voltage
-        if channelUtilization!="":
-            append_string=append_string+",channelUtilization="+channelUtilization
-        if airUtilTx!="":
-            append_string=append_string+",airUtilTx="+airUtilTx
-        if uptime!="":
-            append_string=append_string+",uptime="+uptime
-        if snr!="":
-            append_string=append_string+",snr="+snr
+    shortName = value.get("user", {}).get("shortName", "")
+    timestamp_ns = f"{lastHeard}000000000"  # Convert to nanoseconds
 
-        append_string=append_string+" "+str(value["lastHeard"])+"000000000" ### add extra zeros to timestamp to accomodate precision of nanoseconds, probably there is an easier way to do this :). Check data in your database to make sure it's being recorded correctly for your setup.
+    field_set = ",".join([f"{k}={v}" for k, v in fields.items()])
+    line_protocol = f"nodeinfo,shortName={shortName} {field_set} {timestamp_ns}"
+    
+    print(line_protocol)
+    data.append(line_protocol)
 
-        print(append_string)
-        data.append(append_string) ### Append the node data to be uploaded
-
-client.write(data,{'db':INFLUXDB_DB},protocol='line') ### Upload to DB information of all recent nodes
-
-print("Success!")
+# Write data to InfluxDB
+try:
+    client.write_points(data, protocol='line')
+    print("Data uploaded successfully!")
+except Exception as e:
+    print(f"Failed to write to InfluxDB: {e}")
