@@ -35,13 +35,13 @@ import time
 from influxdb import InfluxDBClient
 
 
-INFLUXDB_HOST = '192.168.13.14' #ip or hostname
-INFLUXDB_PORT = '8086'
-INFLUXDB_USER = 'root'
-INFLUXDB_PASSWORD = ''
-INFLUXDB_DB = 'meshtastic' # databases name
-MESH_NODE_HOST = '192.168.2.150'
-TIME_OFFSET = 600 # in seconds, upload only nodes heard in the last X seconds
+INFLUXDB_HOST = os.environ['INFLUXDB_HOST'] #ip or hostname
+INFLUXDB_PORT = os.environ['INFLUXDB_PORT']
+INFLUXDB_USER = os.environ['INFLUXDB_USER']
+INFLUXDB_PASSWORD = os.environ['INFLUXDB_PASSWORD']
+INFLUXDB_DB = os.environ['INFLUXDB_DB'] # databases name
+MESH_NODE_HOST = os.environ['MESH_NODE_HOST']
+TIME_OFFSET = os.environ['TIME_OFFSET'] # in seconds, upload only nodes heard in the last X seconds
 
 cur_time = time.time()
 client = InfluxDBClient(INFLUXDB_HOST, INFLUXDB_PORT, INFLUXDB_USER,INFLUXDB_PASSWORD, INFLUXDB_DB) #InfluxDB client connection details
