@@ -77,7 +77,7 @@ for key, value in parsed_json.items():
     shortName = str(value["user"].get("shortName",""))
     snr = str(value.get("snr",""))
     lastHeard = value.get("lastHeard",0)
-    deviceMetrics = str(value.get("deviceMetrics","")) 
+    deviceMetrics = str(value.get("deviceMetrics",""))
     if deviceMetrics!="": ### See if deviceMetrics is available for the node
         batteryLevel = str(value["deviceMetrics"].get("batteryLevel",""))
         voltage = str(value["deviceMetrics"].get("voltage",""))
@@ -87,7 +87,7 @@ for key, value in parsed_json.items():
 
     #test_heard = cur_time-lastHeard ### For debug
     #print("Test Node: "+shortName+" lastHeard "+str(test_heard)+"sec ago") ### For debug
-    
+
     if lastHeard > cur_time-TIME_OFFSET: ### Check if the node is fresh
 
         #print(shortName+" Node made it past If") ### For debug
@@ -104,9 +104,9 @@ for key, value in parsed_json.items():
             append_string=append_string+",uptime="+uptime
         if snr!="":
             append_string=append_string+",snr="+snr
-            
+
         append_string=append_string+" "+str(value["lastHeard"])+"000000000" ### add extra zeros to timestamp to accomodate precision of nanoseconds, probably there is an easier way to do this :). Check data in your database to make sure it's being recorded correctly for your setup.
-        
+
         print(append_string)
         data.append(append_string) ### Append the node data to be uploaded
 
