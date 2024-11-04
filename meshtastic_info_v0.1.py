@@ -49,16 +49,16 @@ data = []
 
 
 cmd = ['meshtastic', '--host', MESH_NODE_HOST, '--info'] #local server command to execute to get the node information
-result = subprocess.run(cmd, stdout=subprocess.PIPE)
+RESULT = subprocess.run(cmd, stdout=subprocess.PIPE)
 
-result = str(result.stdout)
+RESULT = str(RESULT.stdout)
 
 ### Clean up the results
-start_pos = result.find('Nodes in mesh: ') + len('Nodes in mesh: ')
-end_pos = result.find('Preferences:')
+start_pos = RESULT.find('Nodes in mesh: ') + len('Nodes in mesh: ')
+end_pos = RESULT.find('Preferences:')
 
 ### Get only the piece of data with node information
-json_chunk = result[start_pos:end_pos]
+json_chunk = RESULT[start_pos:end_pos]
 
 ### Clean up the JSON before parsing
 json_chunk_fixed = json_chunk.replace("\\r","")
