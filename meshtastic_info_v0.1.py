@@ -74,7 +74,7 @@ for key, value in parsed_json.items():
 
     field_set = ",".join([f"{k}={v}" for k, v in fields.items()])
     line_protocol = f"nodeinfo,shortName={shortName} {field_set} {timestamp_ns}"
-    
+
     print(line_protocol)
     data.append(line_protocol)
 
